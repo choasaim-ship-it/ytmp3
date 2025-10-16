@@ -233,8 +233,17 @@ func (a *API) handleConvert(job queue.Job) {
 	ctx := context.Background()
 	s, err := a.sessions.GetSession(ctx, job.SessionID)
 	if err != nil { return }
-	s.State = models.StateConverting
-	_ = a.sessions.UpdateSession(ctx, s)
+    // Wait until download finishes; if not ready, re-enqueue shortly
+    if s.SourcePath == "" || s.State == models.StateDownloading || s.State == models.StatePreparing || s.State == models.StateCreated {
+        go func(j queue.Job){
+            time.Sleep(5 * time.Second)
+            _ = a.sessions.UpdateSession(context.Background(), s)
+            a.cvQueue.Enqueue(j)
+        }(job)
+        return
+    }
+    s.State = models.StateConverting
+    _ = a.sessions.UpdateSession(ctx, s)
 	out := filepath.Join(a.cfg.ConversionsDir, s.ID+".mp3")
 	dur := s.Meta.Duration
 	err = a.conv.Convert(ctx, s.SourcePath, out, job.Quality, job.StartTime, job.EndTime, dur, func(p int){

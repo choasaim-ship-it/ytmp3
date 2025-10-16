@@ -81,7 +81,7 @@ func (d *Downloader) Download(ctx context.Context, url, outputPath string, onPro
 	return d.withPermit(func() error {
 		ctx, cancel := context.WithTimeout(ctx, d.cfg.DownloadTimeout)
 		defer cancel()
-		args := []string{"-f", "bestaudio/best", "-o", outputPath, "--no-playlist", url}
+        args := []string{"-f", "bestaudio/best", "-o", outputPath, "--no-playlist", "--newline", url}
 		cmd := exec.CommandContext(ctx, "yt-dlp", args...)
 		stderr, err := cmd.StderrPipe()
 		if err != nil { return err }
