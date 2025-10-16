@@ -1,0 +1,265 @@
+YouTube to MP3 API Development Prompt
+🎯 Project Overview
+Create a high-performance YouTube to MP3 conversion API in Go that handles video metadata fetching, background downloading, and MP3 conversion with enterprise-grade features. This API should support two-step conversion flow (prepare + convert) with session management.
+
+🏗️ Core Architecture Requirements
+1. Session-Based Conversion Flow
+Two-step process: /prepare → /convert
+Session Management: Track conversion sessions with unique IDs
+Background Processing: Download and convert in background
+Progress Tracking: Real-time progress updates for download and conversion
+2. Worker Pool System
+Concurrent Workers: 20 workers (configurable via environment)
+Job Queue: 1000 job capacity with priority handling
+Background Tasks: Separate workers for download and conversion
+Resource Management: Semaphore-based concurrency control
+3. Storage & Caching
+Redis Integration: Session persistence and caching
+File Management: Temporary file storage with auto-cleanup
+Deduplication: Prevent duplicate conversions for same URL
+Memory Store: In-memory session tracking for fast access
+📡 API Endpoints Specification
+Core Endpoints
+POST /prepare
+Request: {
+  "url": "https://www.youtube.com/watch?v=VIDEO_ID"
+}
+
+Response: {
+  "conversion_id": "conv_12345",
+  "status": "created",
+  "metadata": {
+    "title": "Video Title",
+    "duration": 180,
+    "thumbnail": "https://..."
+  },
+  "message": "Metadata fetched successfully. Stream is downloading in background."
+}
+POST /convert
+Request: {
+  "conversion_id": "conv_12345",
+  "quality": "320",  // 128, 192, 256, 320
+  "start_time": "00:01:30",  // optional
+  "end_time": "00:05:00"     // optional
+}
+
+Response: {
+  "conversion_id": "conv_12345",
+  "status": "converting",
+  "message": "Conversion started."
+}
+GET /status/{conversion_id}
+Response: {
+  "conversion_id": "conv_12345",
+  "status": "completed",  // preparing, downloading, converting, completed, failed
+  "download_progress": 85,  // 0-100
+  "conversion_progress": 100,  // 0-100
+  "download_url": "http://localhost:8080/download/conv_12345.mp3",
+}
+GET /download/{conversion_id}.mp3
+Range Support: HTTP Range requests for partial downloads
+Streaming: Efficient file streaming
+Auto-cleanup: Files deleted after 10 minutes
+DELETE /delete/{conversion_id}
+Response: {
+  "status": "deleted",
+  "message": "Conversion data removed successfully."
+}
+Monitoring Endpoints
+GET /health
+Response: {
+  "status": "healthy",
+  "active_jobs": 5,
+  "queued_jobs": 12,
+  "completed_jobs": 1500,
+  "failed_jobs": 23,
+  "workers": 20,
+  "uptime": "2h30m15s",
+  "memory_usage": "1.2GB"
+}
+GET /metrics (JSON format)
+Response: {
+  "active_jobs": 5,
+  "queued_jobs": 12,
+  "completed_jobs": 1500,
+  "failed_jobs": 23,
+  "workers": 20,
+  "queue_capacity": 1000,
+  "rate_limit": 100,
+  "uptime_seconds": 9015,
+  "success_rate": 0.985,
+  "avg_processing_s": 45.2,
+  "sessions_active": 8
+}
+GET /metrics/prom (Prometheus format)
+Export metrics in Prometheus exposition format
+Include all key performance indicators
+Support for monitoring systems like Grafana
+GET /stats
+Application-level statistics
+Performance metrics
+Resource utilization
+⚙️ Configuration System
+Environment Variables
+# Worker Configuration
+WORKER_POOL_SIZE=20
+JOB_QUEUE_CAPACITY=1000
+MAX_JOB_RETRIES=3
+
+# Rate Limiting
+REQUESTS_PER_SECOND=100
+BURST_SIZE=200
+PER_IP_RPS=10
+PER_IP_BURST=20
+
+# Redis Configuration
+REDIS_ADDR=localhost:6379
+REDIS_PASSWORD=your_password
+REDIS_DB=0
+
+# External Tool Settings
+YTDLP_TIMEOUT=90s
+FFMPEG_MIN_TIMEOUT=15m
+FFMPEG_MAX_TIMEOUT=60m
+FFMPEG_MODE=CBR  # or VBR
+FFMPEG_CBR_BITRATE=192k
+FFMPEG_VBR_Q=5
+FFMPEG_THREADS=0  # 0 = auto
+
+# Download Strategy
+ALWAYS_DOWNLOAD=false
+DOWNLOAD_THRESHOLD=10m
+YTDLP_DOWNLOAD_CONCURRENCY=8
+YTDLP_DOWNLOAD_TIMEOUT=30m
+
+# File Management
+CONVERSIONS_DIR=/tmp/conversions
+UNCONVERTED_FILE_TTL=5m
+CONVERTED_FILE_TTL=10m
+
+# Security & CORS
+REQUIRE_API_KEY=false
+API_KEYS="key1,key2,key3"
+ALLOWED_ORIGINS="*"
+ADMIN_USER=admin
+ADMIN_PASS=password
+
+# External APIs
+OEMBED_ENDPOINT=https://www.youtube.com/oembed
+DURATION_API_ENDPOINT=https://ds2.ezsrv.net/api/getDuration
+
+# Concurrency Limits
+MAX_CONCURRENT_DOWNLOADS=20
+MAX_CONCURRENT_CONVERSIONS=20
+🔧 Technical Implementation Requirements
+1. Session Management
+type ConversionSession struct {
+    ID                 string           `json:"id"`
+    URL                string           `json:"url"`
+    State              ConversionState  `json:"state"`
+    CreatedAt          time.Time        `json:"created_at"`
+    UpdatedAt          time.Time        `json:"updated_at"`
+    SourcePath         string           `json:"source_path"`
+    DownloadProgress   int              `json:"download_progress"`
+    ConversionProgress int              `json:"conversion_progress"`
+    OutputPath         string           `json:"output_path"`
+    Quality            ConversionQuality `json:"quality"`
+    Error              string           `json:"error"`
+    Meta               MetaLite         `json:"metadata"`
+}
+2. Quality Options
+type ConversionQuality string
+
+const (
+    Quality128 ConversionQuality = "128"
+    Quality192 ConversionQuality = "192"
+    Quality256 ConversionQuality = "256"
+    Quality320 ConversionQuality = "320"
+)
+3. State Management
+const (
+    StatePreparing  ConversionState = "preparing"
+    StateFetching   ConversionState = "fetching_metadata"
+    StateCreated     ConversionState = "created"
+    StateDownloading ConversionState = "downloading"
+    StateDownloaded  ConversionState = "downloaded"
+    StateQueued      ConversionState = "queued_for_conversion"
+    StateConverting  ConversionState = "converting"
+    StateCompleted   ConversionState = "completed"
+    StateFailed      ConversionState = "failed"
+)
+🚀 Performance Requirements
+Scalability
+Concurrent Sessions: 20 active + 1000 queued
+Request Rate: 100 requests/second sustained
+Burst Capacity: 200 requests/second
+Memory Usage: ~2GB per instance
+CPU Usage: ~2 cores per instance
+Response Times
+Prepare: < 200ms (metadata fetch)
+Convert: < 100ms (queue job)
+Status Check: < 50ms
+File Download: Depends on file size
+Health Check: < 10ms
+🔒 Security Features
+Authentication & Authorization
+API Key Support: Optional X-API-Key header validation
+Admin Protection: Basic auth for admin endpoints
+Rate Limiting: Per-IP and global rate limits
+Input Validation
+URL Validation: YouTube URL format validation
+Quality Validation: Valid quality options only
+Time Range Validation: Start/end time format validation
+File Size Limits: Prevent resource exhaustion
+CORS & Headers
+CORS Support: Configurable origin restrictions
+Security Headers: X-Content-Type-Options, etc.
+Range Requests: HTTP Range support for downloads
+📊 Monitoring & Observability
+Key Metrics
+ytmp3_active_jobs - Currently processing jobs
+ytmp3_queued_jobs - Jobs waiting in queue
+ytmp3_completed_jobs - Total completed jobs
+ytmp3_failed_jobs - Total failed jobs
+ytmp3_queue_fill_ratio - Queue utilization (0-1)
+ytmp3_success_rate - Conversion success rate
+ytmp3_avg_processing_seconds - Average processing time
+Health Indicators
+Server status (healthy/overloaded)
+Active/queued job counts
+Memory usage
+Uptime
+Worker pool status
+🛠️ External Dependencies
+Required Tools
+yt-dlp: Video metadata extraction and downloading
+ffmpeg: Audio conversion to MP3
+Redis: Session storage and caching
+Tool Configuration
+yt-dlp: Support for cookies, custom extractors, timeout handling
+ffmpeg: CBR/VBR modes, quality settings, thread optimization
+Redis: Connection pooling, error handling, fallback to memory
+🐳 Deployment Requirements
+Docker Support
+Dockerfile: Multi-stage build with Go and external tools
+Docker Compose: Redis, API, and Nginx configuration
+Health Checks: Container health monitoring
+Production Features
+Graceful Shutdown: Proper cleanup on restart
+File Cleanup: Automatic deletion of temporary files
+Error Handling: Comprehensive error logging and recovery
+Logging: Structured logging with different levels
+📝 Additional Features
+Admin Dashboard
+Web Interface: Basic admin panel at /admin
+Real-time Metrics: Live server status and metrics
+Job Management: View and manage active sessions
+Documentation
+API Docs: HTML documentation at /docs
+Frontend Integration: Example code at /docs/frontend
+Health Endpoints: Monitoring and status endpoints
+File Management
+Auto-cleanup: Temporary files deleted after TTL
+Range Requests: Efficient partial file downloads
+Streaming: Direct file streaming without loading into memory
+This API should be production-ready with enterprise-grade features, proper error handling, monitoring, and scalability. Focus on the two-step conversion flow with session management rather than direct extraction.
