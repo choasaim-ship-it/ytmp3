@@ -48,7 +48,12 @@ func NewAPI(cfg *config.Config) (*API, error) {
 
 	_ = os.MkdirAll(cfg.ConversionsDir, 0o755)
 
-	dl := downloader.New(downloader.Config{YtDLPTimeout: cfg.YtDLPTimeout, DownloadTimeout: cfg.YtDLPDownloadTimeout}, cfg.MaxConcurrentDownloads)
+    dl := downloader.New(downloader.Config{
+        YtDLPTimeout:        cfg.YtDLPTimeout,
+        DownloadTimeout:     cfg.YtDLPDownloadTimeout,
+        OEmbedEndpoint:      cfg.OEmbedEndpoint,
+        DurationAPIEndpoint: cfg.DurationAPIEndpoint,
+    }, cfg.MaxConcurrentDownloads)
 	cv := converter.New(converter.Config{MinTimeout: cfg.FFmpegMinTimeout, MaxTimeout: cfg.FFmpegMaxTimeout, Mode: converter.Mode(strings.ToUpper(cfg.FFmpegMode)), CBRBitrate: cfg.FFmpegCBRBitrate, VBRQ: cfg.FFmpegVBRQ, Threads: cfg.FFmpegThreads}, cfg.MaxConcurrentConversions)
 
 	dlQ := queue.NewQueue(cfg.JobQueueCapacity)
