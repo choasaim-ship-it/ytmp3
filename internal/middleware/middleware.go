@@ -95,6 +95,8 @@ func APIKey(required bool, keys map[string]struct{}) func(http.Handler) http.Han
 				_, _ = w.Write([]byte("invalid api key"))
 				return
 			}
+            // Optionally, priority per API key via header (used by queues if implemented)
+            // r.Header.Set("X-API-Priority", keyPriority(k))
 			next.ServeHTTP(w, r)
 		})
 	}

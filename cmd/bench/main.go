@@ -152,11 +152,11 @@ func runOne(client *http.Client, base, videoURL, quality string) JobResult {
 	cb, _ := encodingjson.Marshal(convBody)
 	creq, _ := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(base, "/")+"/convert", bytes.NewReader(cb))
 	creq.Header.Set("Content-Type", "application/json")
-	_, _ = client.Do(creq) // ignore body; status 202 expected
+    _, _ = client.Do(creq) // ignore body; status 202 expected
 	res.ConvertReqEnd = time.Now()
 
 	// 3) poll status
-	poll := time.NewTicker(2 * time.Second)
+    poll := time.NewTicker(2 * time.Second)
 	defer poll.Stop()
 	var sawDownloading, sawDownloaded, sawConverting bool
 	for {

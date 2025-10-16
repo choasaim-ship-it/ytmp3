@@ -22,6 +22,7 @@ type Job struct {
 	EndTime    string
 	EnqueuedAt time.Time
 	Priority   int
+    ApiKey     string
 }
 
 type priorityJob struct {
