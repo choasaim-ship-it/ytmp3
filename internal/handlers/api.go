@@ -236,8 +236,8 @@ func (a *API) handleConvert(job queue.Job) {
     // Wait until download finishes; if not ready, re-enqueue shortly
     if s.SourcePath == "" || s.State == models.StateDownloading || s.State == models.StatePreparing || s.State == models.StateCreated {
         go func(j queue.Job){
+            // Re-enqueue without mutating the session to avoid overwriting newer fields
             time.Sleep(5 * time.Second)
-            _ = a.sessions.UpdateSession(context.Background(), s)
             a.cvQueue.Enqueue(j)
         }(job)
         return
