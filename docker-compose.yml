@@ -1,0 +1,18 @@
+version: "3.8"
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: ytmp3-redis
+    ports: ["6379:6379"]
+  api:
+    build: .
+    container_name: ytmp3-api
+    depends_on:
+      - redis
+    environment:
+      - REDIS_ADDR=redis:6379
+      - CONVERSIONS_DIR=/data
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
