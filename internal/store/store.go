@@ -20,6 +20,11 @@ type SessionStore interface {
 	DeleteSession(ctx context.Context, id string) error
 	FindByURL(ctx context.Context, url string) (string, bool, error)
 	SetURLMap(ctx context.Context, url, id string) error
+    // Optional helpers for dedup caches (no-op for memory store unless implemented)
+    SetVariant(ctx context.Context, variantHash, outputPath string) error
+    GetVariant(ctx context.Context, variantHash string) (string, bool, error)
+    SetAsset(ctx context.Context, assetHash, sourcePath, state string) error
+    GetAsset(ctx context.Context, assetHash string) (sourcePath string, state string, ok bool, err error)
 }
 
 var ErrNotFound = errors.New("not found")
@@ -29,10 +34,17 @@ type MemoryStore struct {
 	mu        sync.RWMutex
 	sessions  map[string]*models.ConversionSession
 	urlToID   map[string]string
+    variantToOut map[string]string
+    assetMap  map[string]struct{ SourcePath string; State string }
 }
 
 func NewMemoryStore() *MemoryStore {
-	return &MemoryStore{sessions: make(map[string]*models.ConversionSession), urlToID: make(map[string]string)}
+    return &MemoryStore{
+        sessions: make(map[string]*models.ConversionSession),
+        urlToID: make(map[string]string),
+        variantToOut: make(map[string]string),
+        assetMap: make(map[string]struct{ SourcePath string; State string }),
+    }
 }
 
 func (m *MemoryStore) CreateSession(ctx context.Context, s *models.ConversionSession) error {
@@ -95,6 +107,31 @@ func (m *MemoryStore) SetURLMap(ctx context.Context, url, id string) error {
 	return nil
 }
 
+func (m *MemoryStore) SetVariant(ctx context.Context, variantHash, outputPath string) error {
+    m.mu.Lock(); defer m.mu.Unlock()
+    m.variantToOut[variantHash] = outputPath
+    return nil
+}
+
+func (m *MemoryStore) GetVariant(ctx context.Context, variantHash string) (string, bool, error) {
+    m.mu.RLock(); defer m.mu.RUnlock()
+    p, ok := m.variantToOut[variantHash]
+    return p, ok, nil
+}
+
+func (m *MemoryStore) SetAsset(ctx context.Context, assetHash, sourcePath, state string) error {
+    m.mu.Lock(); defer m.mu.Unlock()
+    m.assetMap[assetHash] = struct{ SourcePath string; State string }{SourcePath: sourcePath, State: state}
+    return nil
+}
+
+func (m *MemoryStore) GetAsset(ctx context.Context, assetHash string) (string, string, bool, error) {
+    m.mu.RLock(); defer m.mu.RUnlock()
+    a, ok := m.assetMap[assetHash]
+    if !ok { return "", "", false, nil }
+    return a.SourcePath, a.State, true, nil
+}
+
 // RedisStore implements SessionStore on Redis.
 type RedisStore struct {
 	rdb *redis.Client
@@ -139,4 +176,38 @@ func (r *RedisStore) FindByURL(ctx context.Context, url string) (string, bool, e
 }
 func (r *RedisStore) SetURLMap(ctx context.Context, url, id string) error {
 	return r.rdb.Set(ctx, r.urlKey(url), id, 24*time.Hour).Err()
+}
+
+func (r *RedisStore) SetVariant(ctx context.Context, variantHash, outputPath string) error {
+    key := "variant:" + variantHash
+    return r.rdb.Set(ctx, key, outputPath, 24*time.Hour).Err()
+}
+
+func (r *RedisStore) GetVariant(ctx context.Context, variantHash string) (string, bool, error) {
+    key := "variant:" + variantHash
+    v, err := r.rdb.Get(ctx, key).Result()
+    if err != nil {
+        if err == redis.Nil { return "", false, nil }
+        return "", false, err
+    }
+    return v, true, nil
+}
+
+func (r *RedisStore) SetAsset(ctx context.Context, assetHash, sourcePath, state string) error {
+    key := "asset:" + assetHash
+    payload := map[string]string{"source_path": sourcePath, "state": state}
+    b, _ := json.Marshal(payload)
+    return r.rdb.Set(ctx, key, b, 24*time.Hour).Err()
+}
+
+func (r *RedisStore) GetAsset(ctx context.Context, assetHash string) (string, string, bool, error) {
+    key := "asset:" + assetHash
+    b, err := r.rdb.Get(ctx, key).Bytes()
+    if err != nil {
+        if err == redis.Nil { return "", "", false, nil }
+        return "", "", false, err
+    }
+    var p struct{ SourcePath string `json:"source_path"`; State string `json:"state"` }
+    if err := json.Unmarshal(b, &p); err != nil { return "", "", false, err }
+    return p.SourcePath, p.State, true, nil
 }

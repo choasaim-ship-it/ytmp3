@@ -24,6 +24,7 @@ import (
     "ytmp3api/internal/models"
     "ytmp3api/internal/queue"
     "ytmp3api/internal/store"
+    "ytmp3api/internal/util"
 )
 
 type API struct {
@@ -136,22 +137,14 @@ func (a *API) handlePrepare(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid request")
 		return
 	}
-	// dedup
-	if id, ok, _ := a.sessions.FindByURL(r.Context(), req.URL); ok {
-		s, err := a.sessions.GetSession(r.Context(), id)
-		if err == nil {
-			resp := models.PrepareResponse{ConversionID: s.ID, Status: string(s.State), Metadata: s.Meta, Message: "Existing session returned."}
-			writeJSON(w, http.StatusOK, resp)
-			return
-		}
-	}
+    // Always create a new session; dedupe at asset/variant layer instead of reusing sessions
 	id := newID()
 	s := &models.ConversionSession{ID: id, URL: req.URL, State: models.StatePreparing}
 	if err := a.sessions.CreateSession(r.Context(), s); err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to create session")
 		return
 	}
-	_ = a.sessions.SetURLMap(r.Context(), req.URL, id)
+    _ = a.sessions.SetURLMap(r.Context(), req.URL, id)
 
 	// fetch metadata fast using yt-dlp --dump-json (fallback design)
 	title, thumb, dur, _ := a.dl.FetchMetadata(r.Context(), req.URL)
@@ -160,11 +153,17 @@ func (a *API) handlePrepare(w http.ResponseWriter, r *http.Request) {
 	_ = a.sessions.UpdateSession(r.Context(), s)
 
 	// enqueue background download
-	job := queue.Job{ID: newID(), Type: queue.JobDownload, SessionID: id, EnqueuedAt: time.Now(), Priority: 10}
-	if !a.dlQueue.Enqueue(job) {
-		writeErr(w, http.StatusServiceUnavailable, "queue full")
-		return
-	}
+    assetHash := util.HashString(util.CanonicalVideoID(req.URL))
+    s.AssetHash = assetHash
+    _ = a.sessions.UpdateSession(r.Context(), s)
+    if _, state, ok, _ := a.sessions.GetAsset(r.Context(), assetHash); !ok || state == "" || state == string(models.StateFailed) {
+        _ = a.sessions.SetAsset(r.Context(), assetHash, "", string(models.StatePreparing))
+        job := queue.Job{ID: newID(), Type: queue.JobDownload, SessionID: id, EnqueuedAt: time.Now(), Priority: 10}
+        if !a.dlQueue.Enqueue(job) {
+            writeErr(w, http.StatusServiceUnavailable, "queue full")
+            return
+        }
+    }
 	resp := models.PrepareResponse{ConversionID: id, Status: string(s.State), Metadata: s.Meta, Message: "Metadata fetched successfully. Stream is downloading in background."}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -179,7 +178,21 @@ func (a *API) handleConvertReq(w http.ResponseWriter, r *http.Request) {
 	if err != nil { writeErr(w, http.StatusNotFound, "session not found"); return }
     // Always accept and enqueue conversion asynchronously. If source not ready,
     // workers will re-enqueue after a short delay until download completes.
-	job := queue.Job{ID: newID(), Type: queue.JobConvert, SessionID: s.ID, Quality: string(req.Quality), StartTime: req.StartTime, EndTime: req.EndTime, EnqueuedAt: time.Now(), Priority: 5}
+    // Variant hash (url + quality + range)
+    s.AssetHash = util.HashString(util.CanonicalVideoID(s.URL))
+    s.VariantHash = util.HashString(s.AssetHash + "|" + string(req.Quality) + "|" + req.StartTime + "|" + req.EndTime)
+    _ = a.sessions.UpdateSession(r.Context(), s)
+    // Fast-complete if variant already exists
+    if out, ok, _ := a.sessions.GetVariant(r.Context(), s.VariantHash); ok && out != "" {
+        s.OutputPath = out
+        s.State = models.StateCompleted
+        s.DownloadProgress = 100
+        s.ConversionProgress = 100
+        _ = a.sessions.UpdateSession(r.Context(), s)
+        writeJSON(w, http.StatusAccepted, models.ConvertAcceptedResponse{ConversionID: s.ID, Status: string(s.State), QueuePosition: 0, Message: "Reused existing converted output."})
+        return
+    }
+    job := queue.Job{ID: newID(), Type: queue.JobConvert, SessionID: s.ID, Quality: string(req.Quality), StartTime: req.StartTime, EndTime: req.EndTime, EnqueuedAt: time.Now(), Priority: 5}
 	if !a.cvQueue.Enqueue(job) { writeErr(w, http.StatusServiceUnavailable, "queue full"); return }
     s.State = models.StateQueued
 	_ = a.sessions.UpdateSession(r.Context(), s)
@@ -232,7 +245,9 @@ func (a *API) handleDownload(job queue.Job) {
 	if err != nil { return }
 	s.State = models.StateDownloading
 	_ = a.sessions.UpdateSession(ctx, s)
-	out := filepath.Join(a.cfg.ConversionsDir, s.ID+".source")
+    // store by asset hash so future sessions reuse it
+    if s.AssetHash == "" { s.AssetHash = util.HashString(util.CanonicalVideoID(s.URL)) }
+    out := filepath.Join(a.cfg.ConversionsDir, s.AssetHash+".source")
 	err = a.dl.Download(ctx, s.URL, out, func(p int){
 		s.DownloadProgress = p
 		_ = a.sessions.UpdateSession(ctx, s)
@@ -241,12 +256,14 @@ func (a *API) handleDownload(job queue.Job) {
 		s.State = models.StateFailed
 		s.Error = err.Error()
 		_ = a.sessions.UpdateSession(ctx, s)
+        _ = a.sessions.SetAsset(ctx, s.AssetHash, "", string(models.StateFailed))
 		return
 	}
 	s.SourcePath = out
 	s.State = models.StateDownloaded
 	s.DownloadProgress = 100
 	_ = a.sessions.UpdateSession(ctx, s)
+    _ = a.sessions.SetAsset(ctx, s.AssetHash, out, string(models.StateDownloaded))
 }
 
 func (a *API) handleConvert(job queue.Job) {
@@ -264,7 +281,9 @@ func (a *API) handleConvert(job queue.Job) {
     }
     s.State = models.StateConverting
     _ = a.sessions.UpdateSession(ctx, s)
-	out := filepath.Join(a.cfg.ConversionsDir, s.ID+".mp3")
+    if s.AssetHash == "" { s.AssetHash = util.HashString(util.CanonicalVideoID(s.URL)) }
+    if s.VariantHash == "" { s.VariantHash = util.HashString(s.AssetHash+"|"+job.Quality+"|"+job.StartTime+"|"+job.EndTime) }
+    out := filepath.Join(a.cfg.ConversionsDir, s.VariantHash+".mp3")
 	dur := s.Meta.Duration
 	err = a.conv.Convert(ctx, s.SourcePath, out, job.Quality, job.StartTime, job.EndTime, dur, func(p int){
 		s.ConversionProgress = p
@@ -280,6 +299,7 @@ func (a *API) handleConvert(job queue.Job) {
 	s.ConversionProgress = 100
 	s.State = models.StateCompleted
 	_ = a.sessions.UpdateSession(ctx, s)
+    _ = a.sessions.SetVariant(ctx, s.VariantHash, out)
 }
 
 func (a *API) handleDownloadFile(w http.ResponseWriter, r *http.Request) {

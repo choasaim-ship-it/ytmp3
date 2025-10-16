@@ -34,6 +34,8 @@ type MetaLite struct {
 type ConversionSession struct {
 	ID                 string            `json:"conversion_id"`
 	URL                string            `json:"url"`
+    AssetHash          string            `json:"asset_hash"`
+    VariantHash        string            `json:"variant_hash"`
 	State              ConversionState   `json:"status"`
 	CreatedAt          time.Time         `json:"created_at"`
 	UpdatedAt          time.Time         `json:"updated_at"`
