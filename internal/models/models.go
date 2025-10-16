@@ -70,10 +70,21 @@ type ConvertResponse struct {
 	Message      string `json:"message"`
 }
 
+// ConvertAcceptedResponse is returned when a convert request is accepted
+// asynchronously. Clients can check queue position and poll status.
+type ConvertAcceptedResponse struct {
+    ConversionID  string `json:"conversion_id"`
+    Status        string `json:"status"`
+    QueuePosition int    `json:"queue_position"`
+    Message       string `json:"message"`
+}
+
 type StatusResponse struct {
 	ConversionID       string `json:"conversion_id"`
 	Status             string `json:"status"`
 	DownloadProgress   int    `json:"download_progress"`
 	ConversionProgress int    `json:"conversion_progress"`
 	DownloadURL        string `json:"download_url"`
+    QueuePosition      int    `json:"queue_position,omitempty"`
+    Error              string `json:"error,omitempty"`
 }

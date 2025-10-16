@@ -172,27 +172,42 @@ func (a *API) handleConvertReq(w http.ResponseWriter, r *http.Request) {
 	}
 	s, err := a.sessions.GetSession(r.Context(), req.ConversionID)
 	if err != nil { writeErr(w, http.StatusNotFound, "session not found"); return }
-	if s.State != models.StateDownloaded && s.State != models.StateCreated {
-		// allow queueing even if still downloading
-	}
+    // Always accept and enqueue conversion asynchronously. If source not ready,
+    // workers will re-enqueue after a short delay until download completes.
 	job := queue.Job{ID: newID(), Type: queue.JobConvert, SessionID: s.ID, Quality: string(req.Quality), StartTime: req.StartTime, EndTime: req.EndTime, EnqueuedAt: time.Now(), Priority: 5}
 	if !a.cvQueue.Enqueue(job) { writeErr(w, http.StatusServiceUnavailable, "queue full"); return }
-	s.State = models.StateQueued
+    s.State = models.StateQueued
 	_ = a.sessions.UpdateSession(r.Context(), s)
-	writeJSON(w, http.StatusOK, models.ConvertResponse{ConversionID: s.ID, Status: "converting", Message: "Conversion started."})
+    // Report position in the convert queue and current download state
+    position := a.cvQueue.PositionForSession(queue.JobConvert, s.ID)
+    msg := "Conversion request accepted and queued."
+    if s.SourcePath == "" {
+        msg += " Waiting for download to finish."
+    }
+    writeJSON(w, http.StatusAccepted, models.ConvertAcceptedResponse{
+        ConversionID: s.ID,
+        Status:       string(s.State),
+        QueuePosition: position,
+        Message:      msg,
+    })
 }
 
 func (a *API) handleStatus(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	s, err := a.sessions.GetSession(r.Context(), id)
 	if err != nil { writeErr(w, http.StatusNotFound, "not found"); return }
-	downloadURL := ""
+    downloadURL := ""
 	if s.State == models.StateCompleted && s.OutputPath != "" {
 		fn := filepath.Base(s.OutputPath)
 		downloadURL = "/download/" + strings.TrimSuffix(fn, filepath.Ext(fn))
 		if !strings.HasSuffix(downloadURL, ".mp3") { downloadURL += ".mp3" }
 	}
-	writeJSON(w, http.StatusOK, models.StatusResponse{ConversionID: s.ID, Status: string(s.State), DownloadProgress: s.DownloadProgress, ConversionProgress: s.ConversionProgress, DownloadURL: downloadURL})
+    resp := models.StatusResponse{ConversionID: s.ID, Status: string(s.State), DownloadProgress: s.DownloadProgress, ConversionProgress: s.ConversionProgress, DownloadURL: downloadURL}
+    if s.State == models.StateQueued {
+        resp.QueuePosition = a.cvQueue.PositionForSession(queue.JobConvert, s.ID)
+    }
+    if s.Error != "" { resp.Error = s.Error }
+    writeJSON(w, http.StatusOK, resp)
 }
 
 func (a *API) handleDelete(w http.ResponseWriter, r *http.Request) {
