@@ -40,7 +40,7 @@ func New(cfg Config, maxConcurrent int) *Converter {
 
 func (c *Converter) withPermit(fn func() error) error {
 	c.sem <- struct{}{}
-	defer func(){ <-c.sem }()
+	defer func() { <-c.sem }()
 	return fn()
 }
 
@@ -51,27 +51,41 @@ func (c *Converter) Convert(ctx context.Context, inputPath, outputPath string, q
 		defer cancel()
 
 		args := []string{"-y"}
-		if start != "" { args = append(args, "-ss", start) }
-		if end != "" { args = append(args, "-to", end) }
+		if start != "" {
+			args = append(args, "-ss", start)
+		}
+		if end != "" {
+			args = append(args, "-to", end)
+		}
 		args = append(args, "-i", inputPath, "-vn", "-acodec", "libmp3lame")
 		if c.cfg.Mode == ModeCBR {
 			// quality is expected like 128/192/320; append 'k'
 			br := c.cfg.CBRBitrate
-			if quality != "" { br = quality + "k" }
+			if quality != "" {
+				br = quality + "k"
+			}
 			args = append(args, "-b:a", br)
 		} else {
 			q := fmt.Sprintf("%d", c.cfg.VBRQ)
 			args = append(args, "-q:a", q)
 		}
-		if c.cfg.Threads > 0 { args = append(args, "-threads", fmt.Sprintf("%d", c.cfg.Threads)) }
+		if c.cfg.Threads > 0 {
+			args = append(args, "-threads", fmt.Sprintf("%d", c.cfg.Threads))
+		}
 		args = append(args, "-progress", "pipe:1", "-nostats", "-loglevel", "error", outputPath)
 
 		cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 		stdout, err := cmd.StdoutPipe()
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		stderr, err := cmd.StderrPipe()
-		if err != nil { return err }
-		if err := cmd.Start(); err != nil { return err }
+		if err != nil {
+			return err
+		}
+		if err := cmd.Start(); err != nil {
+			return err
+		}
 		go func() { io.Copy(io.Discard, stderr) }()
 		scanner := bufio.NewScanner(stdout)
 		var lastPct int
@@ -81,9 +95,17 @@ func (c *Converter) Convert(ctx context.Context, inputPath, outputPath string, q
 				v := strings.TrimPrefix(line, "out_time_ms=")
 				ms, _ := strconv.ParseFloat(v, 64)
 				if durationSeconds > 0 {
-					pct := int((ms/1000000.0)/float64(durationSeconds) * 100.0)
-					if pct < 0 { pct = 0 } ; if pct > 100 { pct = 100 }
-					if pct != lastPct { lastPct = pct; onProgress(pct) }
+					pct := int((ms / 1000000.0) / float64(durationSeconds) * 100.0)
+					if pct < 0 {
+						pct = 0
+					}
+					if pct > 100 {
+						pct = 100
+					}
+					if pct != lastPct {
+						lastPct = pct
+						onProgress(pct)
+					}
 				}
 			}
 		}

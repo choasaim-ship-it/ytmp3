@@ -26,16 +26,16 @@ const (
 )
 
 type MetaLite struct {
-	Title          string `json:"title"`
-	Duration       int    `json:"duration"`
-	Thumbnail      string `json:"thumbnail"`
+	Title     string `json:"title"`
+	Duration  int    `json:"duration"`
+	Thumbnail string `json:"thumbnail"`
 }
 
 type ConversionSession struct {
 	ID                 string            `json:"conversion_id"`
 	URL                string            `json:"url"`
-    AssetHash          string            `json:"asset_hash"`
-    VariantHash        string            `json:"variant_hash"`
+	AssetHash          string            `json:"asset_hash"`
+	VariantHash        string            `json:"variant_hash"`
 	State              ConversionState   `json:"status"`
 	CreatedAt          time.Time         `json:"created_at"`
 	UpdatedAt          time.Time         `json:"updated_at"`
@@ -75,10 +75,10 @@ type ConvertResponse struct {
 // ConvertAcceptedResponse is returned when a convert request is accepted
 // asynchronously. Clients can check queue position and poll status.
 type ConvertAcceptedResponse struct {
-    ConversionID  string `json:"conversion_id"`
-    Status        string `json:"status"`
-    QueuePosition int    `json:"queue_position"`
-    Message       string `json:"message"`
+	ConversionID  string `json:"conversion_id"`
+	Status        string `json:"status"`
+	QueuePosition int    `json:"queue_position"`
+	Message       string `json:"message"`
 }
 
 type StatusResponse struct {
@@ -87,6 +87,6 @@ type StatusResponse struct {
 	DownloadProgress   int    `json:"download_progress"`
 	ConversionProgress int    `json:"conversion_progress"`
 	DownloadURL        string `json:"download_url"`
-    QueuePosition      int    `json:"queue_position,omitempty"`
-    Error              string `json:"error,omitempty"`
+	QueuePosition      int    `json:"queue_position,omitempty"`
+	Error              string `json:"error,omitempty"`
 }

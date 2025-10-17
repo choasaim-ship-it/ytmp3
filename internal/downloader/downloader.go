@@ -217,9 +217,9 @@ func (d *Downloader) Download(ctx context.Context, url, outputPath string, onPro
 	return d.withPermit(func() error {
 		ctx, cancel := context.WithTimeout(ctx, d.cfg.DownloadTimeout)
 		defer cancel()
-        // Strictly prefer audio-only formats; avoid falling back to video
-        audioFmt := "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio"
-        args := []string{"-f", audioFmt, "-o", outputPath, "--no-playlist", "--newline", url}
+		// Strictly prefer audio-only formats; avoid falling back to video
+		audioFmt := "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio"
+		args := []string{"-f", audioFmt, "-o", outputPath, "--no-playlist", "--newline", url}
 		cmd := exec.CommandContext(ctx, "yt-dlp", args...)
 		stderr, err := cmd.StderrPipe()
 		if err != nil {

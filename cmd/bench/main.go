@@ -1,15 +1,15 @@
 package main
 
 import (
-    bytes "bytes"
-    context "context"
-    encodingjson "encoding/json"
-    flag "flag"
-    fmt "fmt"
-    http "net/http"
-    strings "strings"
-    sync "sync"
-    time "time"
+	bytes "bytes"
+	context "context"
+	encodingjson "encoding/json"
+	flag "flag"
+	fmt "fmt"
+	http "net/http"
+	strings "strings"
+	sync "sync"
+	time "time"
 )
 
 type PrepareResp struct {
@@ -41,22 +41,22 @@ type StatusResp struct {
 }
 
 type JobResult struct {
-	URL             string
-	ID              string
-	OK              bool
-	Err             string
-	MetaMs          int64
-	QueueWaitMs     int64
-	DownloadMs      int64
-	ConvertMs       int64
-	TotalMs         int64
-	PrepareStart    time.Time
-	PrepareEnd      time.Time
-	ConvertReqEnd   time.Time
-	DownloadStart   time.Time
-	DownloadEnd     time.Time
-	ConvertStart    time.Time
-	Completed       time.Time
+	URL           string
+	ID            string
+	OK            bool
+	Err           string
+	MetaMs        int64
+	QueueWaitMs   int64
+	DownloadMs    int64
+	ConvertMs     int64
+	TotalMs       int64
+	PrepareStart  time.Time
+	PrepareEnd    time.Time
+	ConvertReqEnd time.Time
+	DownloadStart time.Time
+	DownloadEnd   time.Time
+	ConvertStart  time.Time
+	Completed     time.Time
 }
 
 func main() {
@@ -101,17 +101,23 @@ func main() {
 	fmt.Println("\nPer-job summary:")
 	for i, r := range results {
 		status := "OK"
-		if !r.OK { status = "FAIL" }
+		if !r.OK {
+			status = "FAIL"
+		}
 		fmt.Printf("%2d) %s id=%s status=%s meta=%dms queue_wait=%dms download=%dms convert=%dms total=%dms\n",
 			i+1, r.URL, r.ID, status, r.MetaMs, r.QueueWaitMs, r.DownloadMs, r.ConvertMs, r.TotalMs)
-		if r.Err != "" { fmt.Printf("    error: %s\n", r.Err) }
+		if r.Err != "" {
+			fmt.Printf("    error: %s\n", r.Err)
+		}
 	}
 
 	// Aggregate stats (completed only)
 	var c int
 	var metaSum, queueSum, dlSum, cvSum, totSum int64
 	for _, r := range results {
-		if !r.OK { continue }
+		if !r.OK {
+			continue
+		}
 		c++
 		metaSum += r.MetaMs
 		queueSum += r.QueueWaitMs
@@ -139,24 +145,30 @@ func runOne(client *http.Client, base, videoURL, quality string) JobResult {
 	res.PrepareStart = time.Now()
 	phttp, err := client.Do(req)
 	res.PrepareEnd = time.Now()
-	if err != nil { res.Err = "prepare: " + err.Error(); return res }
+	if err != nil {
+		res.Err = "prepare: " + err.Error()
+		return res
+	}
 	defer phttp.Body.Close()
 	var pr PrepareResp
 	_ = encodingjson.NewDecoder(phttp.Body).Decode(&pr)
 	res.ID = pr.ConversionID
 	res.MetaMs = res.PrepareEnd.Sub(res.PrepareStart).Milliseconds()
-	if res.ID == "" { res.Err = "prepare: empty id"; return res }
+	if res.ID == "" {
+		res.Err = "prepare: empty id"
+		return res
+	}
 
 	// 2) convert (async 202)
 	convBody := map[string]any{"conversion_id": res.ID, "quality": quality}
 	cb, _ := encodingjson.Marshal(convBody)
 	creq, _ := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(base, "/")+"/convert", bytes.NewReader(cb))
 	creq.Header.Set("Content-Type", "application/json")
-    _, _ = client.Do(creq) // ignore body; status 202 expected
+	_, _ = client.Do(creq) // ignore body; status 202 expected
 	res.ConvertReqEnd = time.Now()
 
 	// 3) poll status
-    poll := time.NewTicker(2 * time.Second)
+	poll := time.NewTicker(2 * time.Second)
 	defer poll.Stop()
 	var sawDownloading, sawDownloaded, sawConverting bool
 	for {
@@ -166,7 +178,9 @@ func runOne(client *http.Client, base, videoURL, quality string) JobResult {
 			return res
 		case <-poll.C:
 			st, e := fetchStatus(client, base, res.ID)
-			if e != nil { continue }
+			if e != nil {
+				continue
+			}
 			if st.Status == "failed" {
 				res.Err = st.Error
 				return res
@@ -209,7 +223,9 @@ func fetchStatus(client *http.Client, base, id string) (StatusResp, error) {
 	var st StatusResp
 	req, _ := http.NewRequest(http.MethodGet, strings.TrimRight(base, "/")+"/status/"+id, nil)
 	resp, err := client.Do(req)
-	if err != nil { return st, err }
+	if err != nil {
+		return st, err
+	}
 	defer resp.Body.Close()
 	_ = encodingjson.NewDecoder(resp.Body).Decode(&st)
 	return st, nil

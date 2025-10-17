@@ -12,14 +12,16 @@ import (
 )
 
 type Server struct {
-	api *handlers.API
+	api  *handlers.API
 	http *http.Server
 }
 
 func New() (*Server, error) {
 	cfg := config.Load()
 	api, err := handlers.NewAPI(cfg)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 
 	mux := http.NewServeMux()
 	mux.Handle("/", api.Router())

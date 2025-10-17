@@ -1,15 +1,15 @@
 package main
 
 import (
-    "context"
-    "log"
-    "net/http"
-    "os"
-    "os/signal"
-    "syscall"
-    "time"
+	"context"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
-    "ytmp3api/internal/server"
+	"ytmp3api/internal/server"
 )
 
 func main() {
