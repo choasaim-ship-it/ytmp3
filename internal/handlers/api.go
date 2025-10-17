@@ -192,7 +192,14 @@ func (a *API) handleConvertReq(w http.ResponseWriter, r *http.Request) {
         writeJSON(w, http.StatusAccepted, models.ConvertAcceptedResponse{ConversionID: s.ID, Status: string(s.State), QueuePosition: 0, Message: "Reused existing converted output."})
         return
     }
-    job := queue.Job{ID: newID(), Type: queue.JobConvert, SessionID: s.ID, Quality: string(req.Quality), StartTime: req.StartTime, EndTime: req.EndTime, EnqueuedAt: time.Now(), Priority: 5}
+    // Map API key to job priority (simple heuristic: premium > default)
+    apiKey := r.Header.Get("X-API-Key")
+    priority := 5
+    lk := strings.ToLower(apiKey)
+    if strings.HasPrefix(lk, "premium") || strings.HasPrefix(lk, "pro") || strings.HasPrefix(lk, "vip") {
+        priority = 50
+    }
+    job := queue.Job{ID: newID(), Type: queue.JobConvert, SessionID: s.ID, Quality: string(req.Quality), StartTime: req.StartTime, EndTime: req.EndTime, EnqueuedAt: time.Now(), Priority: priority, ApiKey: apiKey}
 	if !a.cvQueue.Enqueue(job) { writeErr(w, http.StatusServiceUnavailable, "queue full"); return }
     s.State = models.StateQueued
 	_ = a.sessions.UpdateSession(r.Context(), s)
