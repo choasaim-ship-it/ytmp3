@@ -47,7 +47,9 @@ func NewAPI(cfg *config.Config) (*API, error) {
 	}
 	if sess == nil { sess = store.NewMemoryStore() }
 
-	_ = os.MkdirAll(cfg.ConversionsDir, 0o755)
+    _ = os.MkdirAll(cfg.ConversionsDir, 0o755)
+    _ = os.MkdirAll(filepath.Join(cfg.ConversionsDir, "streams"), 0o755)
+    _ = os.MkdirAll(filepath.Join(cfg.ConversionsDir, "outputs"), 0o755)
 
     dl := downloader.New(downloader.Config{
         YtDLPTimeout:        cfg.YtDLPTimeout,
@@ -82,19 +84,29 @@ func (a *API) startCleanup() {
 	go func() {
 		ticker := time.NewTicker(time.Minute)
 		for range ticker.C {
-			entries, _ := os.ReadDir(a.cfg.ConversionsDir)
-			now := time.Now()
-			for _, e := range entries {
-				if e.IsDir() { continue }
-				p := filepath.Join(a.cfg.ConversionsDir, e.Name())
-				info, err := os.Stat(p)
-				if err != nil { continue }
-				if strings.HasSuffix(p, ".mp3") {
-					if now.Sub(info.ModTime()) > a.cfg.ConvertedFileTTL { _ = os.Remove(p) }
-				} else {
-					if now.Sub(info.ModTime()) > a.cfg.UnconvertedFileTTL { _ = os.Remove(p) }
-				}
-			}
+            now := time.Now()
+            // Clean outputs (converted files)
+            outDir := filepath.Join(a.cfg.ConversionsDir, "outputs")
+            if outs, _ := os.ReadDir(outDir); outs != nil {
+                for _, e := range outs {
+                    if e.IsDir() { continue }
+                    p := filepath.Join(outDir, e.Name())
+                    info, err := os.Stat(p)
+                    if err != nil { continue }
+                    if now.Sub(info.ModTime()) > a.cfg.ConvertedFileTTL { _ = os.Remove(p) }
+                }
+            }
+            // Clean streams (unconverted source files)
+            stDir := filepath.Join(a.cfg.ConversionsDir, "streams")
+            if sts, _ := os.ReadDir(stDir); sts != nil {
+                for _, e := range sts {
+                    if e.IsDir() { continue }
+                    p := filepath.Join(stDir, e.Name())
+                    info, err := os.Stat(p)
+                    if err != nil { continue }
+                    if now.Sub(info.ModTime()) > a.cfg.UnconvertedFileTTL { _ = os.Remove(p) }
+                }
+            }
 		}
 	}()
 }
@@ -252,9 +264,9 @@ func (a *API) handleDownload(job queue.Job) {
 	if err != nil { return }
 	s.State = models.StateDownloading
 	_ = a.sessions.UpdateSession(ctx, s)
-    // store by asset hash so future sessions reuse it
+    // store by asset hash under streams/ so future sessions reuse it
     if s.AssetHash == "" { s.AssetHash = util.HashString(util.CanonicalVideoID(s.URL)) }
-    out := filepath.Join(a.cfg.ConversionsDir, s.AssetHash+".source")
+    out := filepath.Join(a.cfg.ConversionsDir, "streams", s.AssetHash+".source")
 	err = a.dl.Download(ctx, s.URL, out, func(p int){
 		s.DownloadProgress = p
 		_ = a.sessions.UpdateSession(ctx, s)
@@ -290,7 +302,7 @@ func (a *API) handleConvert(job queue.Job) {
     _ = a.sessions.UpdateSession(ctx, s)
     if s.AssetHash == "" { s.AssetHash = util.HashString(util.CanonicalVideoID(s.URL)) }
     if s.VariantHash == "" { s.VariantHash = util.HashString(s.AssetHash+"|"+job.Quality+"|"+job.StartTime+"|"+job.EndTime) }
-    out := filepath.Join(a.cfg.ConversionsDir, s.VariantHash+".mp3")
+    out := filepath.Join(a.cfg.ConversionsDir, "outputs", s.VariantHash+".mp3")
 	dur := s.Meta.Duration
 	err = a.conv.Convert(ctx, s.SourcePath, out, job.Quality, job.StartTime, job.EndTime, dur, func(p int){
 		s.ConversionProgress = p
