@@ -28,7 +28,9 @@ func (r *Registry) SuccessRate() float64 {
 	s := r.SuccessCount.Load()
 	e := r.ErrorCount.Load()
 	t := s + e
-	if t == 0 { return 1.0 }
+	if t == 0 {
+		return 1.0
+	}
 	return float64(s) / float64(t)
 }
 

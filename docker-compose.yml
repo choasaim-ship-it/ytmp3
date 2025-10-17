@@ -12,6 +12,16 @@ services:
     environment:
       - REDIS_ADDR=redis:6379
       - CONVERSIONS_DIR=/data
+      - REQUIRE_API_KEY=true
+      - API_KEYS=free_123,premium_abc
+      - REQUESTS_PER_SECOND=200
+      - BURST_SIZE=400
+      - PER_IP_RPS=20
+      - PER_IP_BURST=40
+      - WORKER_POOL_SIZE=40
+      - MAX_CONCURRENT_DOWNLOADS=50
+      - MAX_CONCURRENT_CONVERSIONS=16
+      - JOB_QUEUE_CAPACITY=10000
     ports:
       - "8080:8080"
     volumes:

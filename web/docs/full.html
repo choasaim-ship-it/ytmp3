@@ -36,7 +36,7 @@
 }</pre>
 
   <h3>POST /convert</h3>
-  <p>Queue the conversion job. Starts once the download is finished.</p>
+  <p>Asynchronously enqueue the conversion. Returns <code>202 Accepted</code> with queue position; workers start once the download is ready.</p>
   <pre>{
   "conversion_id": "conv_12345",
   "quality": "320",
@@ -45,9 +45,10 @@
 }</pre>
   <pre>{
   "conversion_id": "conv_12345",
-  "status": "converting",
-  "message": "Conversion started."
-}</pre>
+  "status": "queued_for_conversion",
+  "queue_position": 2,
+  "message": "Conversion request accepted and queued. Waiting for download to finish."
+  }</pre>
 
   <h3>GET /status/{conversion_id}</h3>
   <p>Poll to track download and conversion progress.</p>
@@ -56,7 +57,9 @@
   "status": "completed|preparing|downloading|converting|failed|queued_for_conversion",
   "download_progress": 85,
   "conversion_progress": 100,
-  "download_url": "/download/conv_12345.mp3"
+  "download_url": "/download/conv_12345.mp3",
+  "queue_position": 2,
+  "error": ""
 }</pre>
 
   <h3>GET /download/{conversion_id}.mp3</h3>
@@ -120,8 +123,8 @@ MAX_CONCURRENT_CONVERSIONS=20</pre>
   <ol>
     <li>Call <strong>/prepare</strong> with a direct video URL (avoid playlist/radio).</li>
     <li>Receive <code>conversion_id</code>; background download starts.</li>
-    <li>Call <strong>/convert</strong> with <code>conversion_id</code> (+ quality, optional trim).</li>
-    <li>Poll <strong>/status</strong> every 2–5s until <code>status=completed</code>.</li>
+    <li>Call <strong>/convert</strong> with <code>conversion_id</code> (+ quality, optional trim). Server returns <code>202 Accepted</code> with <code>queue_position</code>.</li>
+    <li>Poll <strong>/status</strong> every 2–5s until <code>status=completed</code>. While queued, <code>queue_position</code> may be present.</li>
     <li>Download from <strong>/download/{id}.mp3</strong> (supports Range).</li>
   </ol>
 
